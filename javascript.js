@@ -12,6 +12,7 @@
   let cur = -1;          // chapter index
   let page = 0;          // halaman (0-based) – awal dari tampilan saat ini
   let io = null;
+  let lastY = 0, ignoreUntil = 0;   // untuk menu otomatis saat scroll
 
   /* ---------- util ---------- */
   function toast(msg) {
@@ -114,12 +115,9 @@
   function setImmersive(on) {
     document.body.classList.toggle('immersive', !!on && touchUI.matches && cur >= 0);
   }
-  function tryFullscreen() {
-    try {
-      if (touchUI.matches && !document.fullscreenElement && document.documentElement.requestFullscreen)
-        document.documentElement.requestFullscreen({navigationUI: 'hide'}).catch(() => {});
-    } catch (e) {}
-  }
+  const topPad = () => parseFloat(getComputedStyle(document.querySelector('main')).paddingTop) || 0;
+  function jumpTo(y) { ignoreUntil = Date.now() + 500; window.scrollTo(0, Math.max(0, y)); lastY = window.scrollY; }
+  function jumpToEl(el) { if (el) jumpTo(el.getBoundingClientRect().top + window.scrollY - topPad()); }
 
   function openChapter(i, p) {
     cur = i; page = p || 0;
@@ -128,7 +126,6 @@
     if (touchUI.matches) {
       // di HP: langsung layar penuh + sembunyikan menu
       setImmersive(true);
-      tryFullscreen();
       if (!openChapter.hinted) { openChapter.hinted = true; setTimeout(() => toast('Ketuk layar untuk menampilkan menu'), 1800); }
       $('#side').classList.add('hidden');
     }
@@ -136,7 +133,7 @@
 
   function render() {
     if (io) { io.disconnect(); io = null; }
-    viewer.innerHTML = ''; viewer.className = ''; viewer.scrollTop = 0; viewer.scrollLeft = 0;
+    viewer.innerHTML = ''; viewer.className = ''; jumpTo(0);
     document.documentElement.style.setProperty('--zoom', S.zoom);
     $('#zVal').textContent = S.zoom + '%';
 
@@ -165,11 +162,9 @@
       viewer.appendChild(wrap);
       io = new IntersectionObserver(es => {
         es.forEach(e => { if (e.isIntersecting) { page = +e.target.dataset.i; updateInfo(); } });
-      }, {root: viewer, rootMargin: '-45% 0px -45% 0px'});
+      }, {rootMargin: '-45% 0px -45% 0px'});
       wrap.querySelectorAll('img').forEach(im => io.observe(im));
-      requestAnimationFrame(() => {
-        const t = wrap.children[page]; if (t) viewer.scrollTop = t.offsetTop;
-      });
+      requestAnimationFrame(() => jumpToEl(wrap.children[page]));
     } else {
       const sp = spreads(), si = spreadIdx(sp, page), cur_sp = sp[si];
       page = cur_sp[0];
@@ -216,8 +211,8 @@
   function go(dir) {
     if (cur < 0) return;
     if (S.mode === 'scroll') {
-      viewer.scrollBy({top: dir * viewer.clientHeight * 0.85, behavior: 'smooth'});
-      const atEnd = viewer.scrollTop + viewer.clientHeight >= viewer.scrollHeight - 4;
+      window.scrollBy({top: dir * window.innerHeight * 0.85, behavior: 'smooth'});
+      const atEnd = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4;
       if (dir > 0 && atEnd) nextChapter();
       return;
     }
@@ -237,7 +232,7 @@
   function jump(p) {
     page = Math.max(0, Math.min(cur_().pages.length - 1, p));
     if (S.mode === 'scroll') {
-      const t = viewer.querySelector('.scroll').children[page]; if (t) viewer.scrollTop = t.offsetTop;
+      jumpToEl(viewer.querySelector('.scroll').children[page]);
     } else render();
     updateInfo();
   }
@@ -323,24 +318,19 @@
   });
 
   /* ketuk layar = tampil/sembunyikan menu (HP) */
-  let down = null;
-  viewer.addEventListener('pointerdown', e => { down = {x: e.clientX, y: e.clientY, t: Date.now()}; });
   viewer.addEventListener('click', e => {
     if (!touchUI.matches || cur < 0) return;
-    if (e.target.closest('.hit,.empty,label,button')) return;
+    if (e.target.closest('.empty,label,button')) return;
     setImmersive(!document.body.classList.contains('immersive'));
   });
-  // keluar dari layar penuh manual -> menu muncul lagi
-  document.addEventListener('fullscreenchange', () => {
-    if (!document.fullscreenElement && touchUI.matches) setImmersive(false);
-  });
-  // sembunyikan menu otomatis saat scroll ke bawah, munculkan saat scroll ke atas
-  let lastY = 0;
-  viewer.addEventListener('scroll', () => {
+  // scroll ke bawah = menu hilang, scroll ke atas = menu muncul (HP)
+  addEventListener('scroll', () => {
     if (!touchUI.matches || S.mode !== 'scroll' || cur < 0) return;
-    const y = viewer.scrollTop, d = y - lastY;
+    if (Date.now() < ignoreUntil) { lastY = window.scrollY; return; }
+    const y = window.scrollY, d = y - lastY;
     if (Math.abs(d) > 40) { setImmersive(d > 0); lastY = y; }
   }, {passive: true});
+  $('#toTop').onclick = () => window.scrollTo({top: 0, behavior: 'smooth'});
 
   /* init */
   applyUI(); renderList(); render();
