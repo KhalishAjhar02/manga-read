@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manga Reader Pribadi</title>
+<link rel="stylesheet" href="stayle.css">
+<link rel="icon" type="image/x-icon" href="manga.ico">
+</head>
+<body>
+
+<header>
+  <h1><img src="manga.png" alt="Logo" style="height:1.4em;width:auto;vertical-align:middle;margin-right:8px;"><b>Manga</b> Reader</h1>
+  <button id="btnSide" title="Daftar chapter (L)">☰</button>
+  <label class="btn primary" title="Pilih gambar atau file ZIP/CBZ">＋ Upload gambar / CBZ
+    <input id="fileImg" type="file" accept="image/*,.zip,.cbz" multiple hidden>
+  </label>
+  <label class="btn" title="Pilih satu folder (tiap subfolder = 1 chapter)">📁 Folder
+    <input id="fileDir" type="file" webkitdirectory multiple hidden>
+  </label>
+  <div class="sep"></div>
+  <select id="selMode" title="Mode baca (M)">
+    <option value="scroll">Scroll (webtoon)</option>
+    <option value="single">Satu halaman</option>
+    <option value="double">Dua halaman</option>
+  </select>
+  <select id="selDir" title="Arah baca (D)">
+    <option value="rtl">Kanan → Kiri (manga)</option>
+    <option value="ltr">Kiri → Kanan</option>
+  </select>
+  <select id="selFit" title="Ukuran (hanya mode halaman)">
+    <option value="w">Pas lebar</option>
+    <option value="h">Pas tinggi</option>
+    <option value="o">Ukuran asli</option>
+  </select>
+  <button id="zOut" title="Perkecil (-)">−</button>
+  <span id="zVal" style="min-width:42px;text-align:center">100%</span>
+  <button id="zIn" title="Perbesar (+)">＋</button>
+  <div class="spacer"></div>
+  <button id="btnTheme" title="Tema (T)">🌓</button>
+  <button id="btnFs" title="Layar penuh (F)">⛶</button>
+</header>
+
+<main>
+  <aside id="side">
+    <h2>Chapter</h2>
+    <div id="chList"></div>
+  </aside>
+  <div id="viewer"></div>
+</main>
+
+<footer>
+  <button id="prevCh" title="Chapter sebelumnya">⏮</button>
+  <button id="prev" title="Sebelumnya">◀</button>
+  <input id="seek" type="range" min="1" max="1" value="1">
+  <button id="next" title="Berikutnya">▶</button>
+  <button id="nextCh" title="Chapter berikutnya">⏭</button>
+  <div id="info">–</div>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="javascript.js"></script>
+</body>
+</html>
