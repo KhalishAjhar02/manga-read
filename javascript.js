@@ -110,10 +110,28 @@
   }
   const spreadIdx = (sp, p) => Math.max(0, sp.findIndex(s => s.includes(p)));
 
+  const touchUI = matchMedia('(max-width:700px),(pointer:coarse)');
+  function setImmersive(on) {
+    document.body.classList.toggle('immersive', !!on && touchUI.matches && cur >= 0);
+  }
+  function tryFullscreen() {
+    try {
+      if (touchUI.matches && !document.fullscreenElement && document.documentElement.requestFullscreen)
+        document.documentElement.requestFullscreen({navigationUI: 'hide'}).catch(() => {});
+    } catch (e) {}
+  }
+
   function openChapter(i, p) {
     cur = i; page = p || 0;
     renderList(); render();
     if (chapters[i]) toast(chapters[i].name);
+    if (touchUI.matches) {
+      // di HP: langsung layar penuh + sembunyikan menu
+      setImmersive(true);
+      tryFullscreen();
+      if (!openChapter.hinted) { openChapter.hinted = true; setTimeout(() => toast('Ketuk layar untuk menampilkan menu'), 1800); }
+      $('#side').classList.add('hidden');
+    }
   }
 
   function render() {
@@ -123,6 +141,7 @@
     $('#zVal').textContent = S.zoom + '%';
 
     if (cur < 0 || !chapters.length) {
+      setImmersive(false);
       viewer.classList.add('center');
       viewer.innerHTML = `<div class="empty"><h2>Mulai baca</h2>
         <p>Upload gambar halaman manga (JPG/PNG/WebP), file <b>.zip / .cbz</b>, atau seluruh folder.<br>Bisa juga <b>drag &amp; drop</b> ke sini.</p>
@@ -302,6 +321,26 @@
       addFiles(files);
     } else addFiles(e.dataTransfer.files);
   });
+
+  /* ketuk layar = tampil/sembunyikan menu (HP) */
+  let down = null;
+  viewer.addEventListener('pointerdown', e => { down = {x: e.clientX, y: e.clientY, t: Date.now()}; });
+  viewer.addEventListener('click', e => {
+    if (!touchUI.matches || cur < 0) return;
+    if (e.target.closest('.hit,.empty,label,button')) return;
+    setImmersive(!document.body.classList.contains('immersive'));
+  });
+  // keluar dari layar penuh manual -> menu muncul lagi
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement && touchUI.matches) setImmersive(false);
+  });
+  // sembunyikan menu otomatis saat scroll ke bawah, munculkan saat scroll ke atas
+  let lastY = 0;
+  viewer.addEventListener('scroll', () => {
+    if (!touchUI.matches || S.mode !== 'scroll' || cur < 0) return;
+    const y = viewer.scrollTop, d = y - lastY;
+    if (Math.abs(d) > 40) { setImmersive(d > 0); lastY = y; }
+  }, {passive: true});
 
   /* init */
   applyUI(); renderList(); render();
