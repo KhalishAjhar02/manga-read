@@ -51,3 +51,15 @@ footer input[type=range]{flex:1;accent-color:var(--accent)}
 body.fs header,body.fs footer{display:none}
 body.fs{--vh:0px}
 @media(max-width:700px){aside{position:absolute;z-index:5;top:0;bottom:0;height:100%}.hit{width:35%}}
+/* Mode imersif: menu melayang, bisa disembunyikan (HP / layar sentuh) */
+body{height:100dvh}
+@media (max-width:700px),(pointer:coarse){
+  :root{--vh:0px}
+  header,footer{position:fixed;left:0;right:0;z-index:20;transition:transform .22s ease}
+  header{top:0;height:56px}
+  footer{bottom:0}
+  aside{padding-top:56px;padding-bottom:42px}
+  body.immersive header{transform:translateY(-100%)}
+  body.immersive footer{transform:translateY(100%)}
+  .fit-h .spread img{max-height:100dvh}
+}
