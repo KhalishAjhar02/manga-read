@@ -8,11 +8,12 @@
   try { Object.assign(S, JSON.parse(localStorage.getItem('mangaReader') || '{}')); } catch (e) {}
   const save = () => { try { localStorage.setItem('mangaReader', JSON.stringify(S)); } catch (e) {} };
 
-  const chapters = [];   // {name, pages:[url]}
+  const chapters = [];   // {id, name, order, blobs, pages:[url]}
   let cur = -1;          // chapter index
   let page = 0;          // halaman (0-based) – awal dari tampilan saat ini
   let io = null;
   let lastY = 0, ignoreUntil = 0;   // untuk menu otomatis saat scroll
+  let seq = 0;
 
   /* ---------- util ---------- */
   function toast(msg) {
@@ -21,6 +22,50 @@
   }
   const cur_ = () => chapters[cur];
 
+  /* ---------- penyimpanan permanen (IndexedDB) ---------- */
+  const DB_NAME = 'manga-reader', STORE = 'chapters';
+  let dbp = null;
+  function openDb() {
+    if (dbp) return dbp;
+    dbp = new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(STORE, {keyPath: 'id'});
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => { dbp = null; reject(req.error); };
+    });
+    return dbp;
+  }
+  function dbTx(mode, fn) {
+    return openDb().then(d => new Promise((resolve, reject) => {
+      const t = d.transaction(STORE, mode), r = fn(t.objectStore(STORE));
+      t.oncomplete = () => resolve(r && r.result);
+      t.onerror = () => reject(t.error);
+      t.onabort = () => reject(t.error);
+    }));
+  }
+  function saveChapter(ch) {
+    return dbTx('readwrite', s => s.put({id: ch.id, name: ch.name, order: ch.order, pages: ch.blobs}));
+  }
+  function deleteChapter(id) {
+    return dbTx('readwrite', s => s.delete(id));
+  }
+  function loadChapters() {
+    return dbTx('readonly', s => s.getAll()).then(rows => (rows || [])
+      .sort((a, b) => a.order - b.order)
+      .map(r => ({
+        id: r.id, name: r.name, order: r.order, blobs: r.pages,
+        pages: r.pages.map(b => URL.createObjectURL(b))
+      })));
+  }
+  function newChapter(name, blobs) {
+    seq++;
+    const id = Date.now().toString(36) + seq + Math.random().toString(36).slice(2, 6);
+    return {id, name, order: Date.now() + seq, blobs, pages: blobs.map(b => URL.createObjectURL(b))};
+  }
+  if (navigator.storage && navigator.storage.persist) {
+    try { navigator.storage.persist().catch(() => {}); } catch (e) {}
+  }
+
   /* ---------- memuat file ---------- */
   async function addFiles(fileList) {
     const files = [...fileList];
@@ -28,6 +73,7 @@
     const zips = files.filter(f => /\.(zip|cbz)$/i.test(f.name));
     const imgs = files.filter(f => f.type.startsWith('image/') || IMG.test(f.name));
     const before = chapters.length;
+    const added = [];
 
     for (const z of zips.sort((a, b) => natural(a.name, b.name))) {
       try {
@@ -43,10 +89,10 @@
           const blobs = [];
           for (const e of list) {
             const b = await e.async('blob');
-            blobs.push(URL.createObjectURL(new Blob([b], {type: mime(e.name)})));
+            blobs.push(new Blob([b], {type: mime(e.name)}));
           }
           const base = z.name.replace(/\.(zip|cbz)$/i, '');
-          chapters.push({name: key ? `${base} / ${key.split('/').pop()}` : base, pages: blobs});
+          added.push(newChapter(key ? `${base} / ${key.split('/').pop()}` : base, blobs));
         }
       } catch (err) { toast('Gagal membaca ' + z.name); console.error(err); }
     }
@@ -61,15 +107,31 @@
       const keys = Object.keys(groups).sort(natural);
       keys.forEach(k => {
         const list = groups[k].sort((a, b) => natural(a.name, b.name));
-        const name = k ? k.split('/').pop() : `Chapter ${chapters.length + 1}`;
-        chapters.push({name, pages: list.map(f => URL.createObjectURL(f))});
+        const name = k ? k.split('/').pop() : `Chapter ${before + added.length + 1}`;
+        added.push(newChapter(name, list));
       });
     }
 
-    if (chapters.length === before) { toast('Tidak ada gambar yang ditemukan'); return; }
+    if (!added.length) { toast('Tidak ada gambar yang ditemukan'); return; }
+
+    // simpan ke IndexedDB dulu; hanya chapter yang berhasil disimpan yang ditampilkan
+    let failed = 0;
+    for (const ch of added) {
+      try {
+        await saveChapter(ch);
+        chapters.push(ch);
+      } catch (err) {
+        failed++; console.error(err);
+        ch.pages.forEach(u => URL.revokeObjectURL(u));
+      }
+    }
+
+    const okCount = chapters.length - before;
+    if (!okCount) { toast('Gagal menyimpan chapter ke browser (penyimpanan penuh atau mode privat)'); return; }
     renderList();
     if (cur < 0 || before === 0) openChapter(before, 0);
-    else toast(`${chapters.length - before} chapter ditambahkan`);
+    else toast(`${okCount} chapter ditambahkan`);
+    if (failed) setTimeout(() => toast(`${failed} chapter gagal disimpan`), 1700);
   }
   function mime(n) {
     const e = n.split('.').pop().toLowerCase();
@@ -93,7 +155,9 @@
     });
   }
   function removeChapter(i) {
-    chapters[i].pages.forEach(u => URL.revokeObjectURL(u));
+    const ch = chapters[i];
+    ch.pages.forEach(u => URL.revokeObjectURL(u));
+    deleteChapter(ch.id).catch(err => console.error(err));
     chapters.splice(i, 1);
     if (!chapters.length) { cur = -1; page = 0; renderList(); render(); return; }
     if (i < cur) cur--;
@@ -332,6 +396,16 @@
   }, {passive: true});
   $('#toTop').onclick = () => window.scrollTo({top: 0, behavior: 'smooth'});
 
-  /* init */
+  /* init: muat chapter yang tersimpan di browser */
   applyUI(); renderList(); render();
+  loadChapters().then(list => {
+    if (!list.length) return;
+    chapters.push(...list);
+    renderList();
+    openChapter(0, 0);
+    toast(`${list.length} chapter dimuat dari penyimpanan browser`);
+  }).catch(err => {
+    console.error(err);
+    toast('Penyimpanan browser tidak tersedia (mode privat?)');
+  });
 })();
